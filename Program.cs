@@ -18,7 +18,7 @@ public class DC20Controller {
     public DC20Controller(string portName) {
         serial_port = new SerialPort(portName, baudRate: 9600, Parity.Even, dataBits: 8, StopBits.One);
     }
-    public ~DC20Controller() {
+    ~DC20Controller() {
         serial_port.Close();
     }
 
