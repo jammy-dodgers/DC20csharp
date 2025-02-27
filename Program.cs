@@ -1,13 +1,26 @@
-﻿using System.IO.Ports;
+﻿using System.Diagnostics;
+using System.IO.Ports;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text;
 
 Console.WriteLine("Hello world!");
-
+var dc20 = new DC20Controller("COM6");
+dc20.Init(DC20Controller.BaudRate._115200);
+var status = dc20.Status();
+if (status != null) {
+    Console.WriteLine(status.Value.ToString());
+    for (int i = 0; i < status.Value.PicturesTaken; i++) {
+        var thumb = dc20.GetThumbnail((byte)(i + 1));
+        File.WriteAllText($"./thumb_{i+1}.pgm", DC20Util.ThumbnailToPGM(thumb));
+    }
+}
 
 public class DC20Controller {
     public int LastResponse { get; private set; }
     public bool LastResponseCorrect {get; private set;}
+
+    private bool debug;
     public enum BaudRate {
         _9600,
         _19200,
@@ -18,8 +31,15 @@ public class DC20Controller {
 
     SerialPort serial_port;
 
-    public DC20Controller(string portName) {
+    private void Debug(string text) {
+        Console.WriteLine($"LR:{LastResponse},LRC:{LastResponseCorrect},{text}");
+    }
+
+    public DC20Controller(string portName, bool debug_mode = false) {
         serial_port = new SerialPort(portName, baudRate: 9600, Parity.Even, dataBits: 8, StopBits.One);
+        debug = debug_mode;
+        serial_port.Open();
+        Debug($"Hello, serial! {serial_port.IsOpen}");
     }
     ~DC20Controller() {
         serial_port.Close();
@@ -27,16 +47,40 @@ public class DC20Controller {
 
     private void Write(params byte[] bytes) {
         serial_port.Write(bytes, 0, bytes.Length);
+        Debug($"Wrote [{string.Join(',', bytes.Select(x => x.ToString("X2")))}]");
     }
     private void WriteAck(int acknowledgement = 0xD2) {
         serial_port.Write(new byte[1] {(byte)acknowledgement}, 0, 1);
+        Debug($"Wrote ACK {acknowledgement:X2}");
     }
     private void Acknowledge(int expected = 0xD1) {
         LastResponse = serial_port.ReadByte();
         LastResponseCorrect = LastResponse == expected;
+        Debug($"Read ACK got {LastResponse:X2} == exp {expected:X2}: {LastResponseCorrect}");
     }
 
-    public bool Init(BaudRate newBaudRate) {
+    private (bool, byte[]) ReadWithChecksum(int byte_count) {
+        byte[] status = new byte[byte_count];
+        
+        // var bytes_read = serial_port.Read(status, 0, byte_count); 
+        // Not working. Why? Work out later.
+
+        var bytes_read = 0;
+        for (int i = 0; i < byte_count; i++) {
+            var read = serial_port.ReadByte();
+            if (read == -1)
+                break;
+            status[i] = (byte)read;
+            bytes_read++;
+        }
+
+        var checksum = serial_port.ReadByte();
+        var checksum_correct = status.Aggregate(0, (s, x) => s ^ x) == checksum;
+        Debug($"Attempt read {byte_count} bytes, got {bytes_read}, checksum {checksum_correct}");
+        return (bytes_read == byte_count && checksum_correct, status);
+    }
+
+    public bool Init(BaudRate newBaudRate = BaudRate._9600) {
         (byte BaudA, byte BaudB) = newBaudRate switch
         {
             BaudRate._9600 => ((byte)0x96, (byte)0x00),
@@ -51,6 +95,7 @@ public class DC20Controller {
             0x00, 0x00,
             0x00, 0x1A);
         Acknowledge();
+        Debug("Connected");
         serial_port.BaudRate = newBaudRate switch
         {
             BaudRate._9600 => 9600,
@@ -63,40 +108,69 @@ public class DC20Controller {
         return LastResponseCorrect;
     }
 
-    private (bool, byte[]) ReadWithChecksum(int byte_count) {
-        byte[] status = new byte[256];
-        var bytes_read = serial_port.Read(status, 0, 256);
-        var checksum = serial_port.ReadByte();
-        var checksum_correct = status.Aggregate(0, (s, x) => s ^ x) == checksum;
-        return (bytes_read == 256 && checksum_correct, status);
+    public byte[] GetThumbnail(byte index) {
+        Write(0x56, 0x00, 0x00, (byte)index, 0x00, 0x00, 0x00, 0x1A);
+        Acknowledge();
+        byte[] thumbnail = new byte[5120];
+        for (int i = 0; i < 5; i++) {
+            var (correct, bytes) = ReadWithChecksum(1024);
+            WriteAck(0xD2);
+            bytes.CopyTo(thumbnail, i * 1024);
+        }
+        Acknowledge(0x00);
+        return thumbnail;
     }
 
-    public bool Status() {
+    public StatusData? Status() {
         Write( 0x7F, 00, 00, 00, 00, 00, 00, 0x1A );
         Acknowledge();
         var (correct, bytes) = ReadWithChecksum(256);
+        Debug($"[{string.Join(", ", bytes.Select((x, i) => $"{i+1}:{x:X2}"))}]");
         var result = StatusData.From(bytes);
         WriteAck(0xD2);
         Acknowledge(0x00);
 
-        return correct;
+        return correct ? result : null;
     }
 
-    struct StatusData {
-        byte Model;
-        byte PicturesTaken;
-        byte PicturesRemaining;
-        byte Resolution;
-        byte Battery;
+    public struct StatusData {
+        public byte Model;
+        public byte PicturesTaken;
+        public byte PicturesRemaining;
+        public byte Resolution;
+        public byte Battery;
 
         public static StatusData From(byte[] bytes) {
             StatusData s = new StatusData();
-            s.Model = bytes[2];
-            s.PicturesTaken = bytes[10];
-            s.PicturesRemaining = bytes[12];
-            s.Resolution = bytes[24];
-            s.Battery = bytes[30];
+            s.Model = bytes[1];
+            s.PicturesTaken = bytes[9];
+            s.PicturesRemaining = bytes[11];
+            s.Resolution = bytes[23];
+            s.Battery = bytes[29];
             return s;
         }
+
+        public override string ToString()
+        {
+            return $"{{Model: {Model}, PicturesTaken: {PicturesTaken}, PicturesRemaining: {PicturesRemaining}, Resolution: {Resolution}, Battery: {Battery} }}";
+        }
+    }
+}
+
+static class DC20Util {
+    public static string ThumbnailToPGM(byte[] data) {
+        var sb = new StringBuilder();
+        sb.AppendLine("P2");
+        sb.AppendLine($"{80} {60}");
+        sb.AppendLine("255");
+        int i = 0;
+        for (int x = 0; x < 80; x++) {
+            for (int y = 0; y < 60; y++) {
+                sb.Append($"{data[i]} ");
+                i++;
+            }
+            sb.AppendLine();
+        }
+        return sb.ToString();
     }
 }
