@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 Console.WriteLine("Hello world!");
-var dc20 = new DC20Controller("COM6");
-dc20.Init(DC20Controller.BaudRate._115200);
+var dc20 = new DC20("COM6");
+dc20.Init(DC20.BaudRate._115200);
 var status = dc20.Status();
 if (status != null) {
     Console.WriteLine(status.Value.ToString());
@@ -16,9 +16,11 @@ if (status != null) {
     }
 }
 
-public class DC20Controller {
+public class DC20 {
     public int LastResponse { get; private set; }
     public bool LastResponseCorrect {get; private set;}
+
+    private StatusData statusDataInternal;
 
     private bool debug;
     public enum BaudRate {
@@ -35,13 +37,13 @@ public class DC20Controller {
         Console.WriteLine($"LR:{LastResponse},LRC:{LastResponseCorrect},{text}");
     }
 
-    public DC20Controller(string portName, bool debug_mode = false) {
+    public DC20(string portName, bool debug_mode = false) {
         serial_port = new SerialPort(portName, baudRate: 9600, Parity.Even, dataBits: 8, StopBits.One);
         debug = debug_mode;
         serial_port.Open();
         Debug($"Hello, serial! {serial_port.IsOpen}");
     }
-    ~DC20Controller() {
+    ~DC20() {
         serial_port.Close();
     }
 
@@ -108,7 +110,7 @@ public class DC20Controller {
         return LastResponseCorrect;
     }
 
-    public byte[] GetThumbnail(byte index) {
+    public Thumbnail GetThumbnail(byte index) {
         Write(0x56, 0x00, 0x00, (byte)index, 0x00, 0x00, 0x00, 0x1A);
         Acknowledge();
         byte[] thumbnail = new byte[5120];
@@ -118,7 +120,10 @@ public class DC20Controller {
             bytes.CopyTo(thumbnail, i * 1024);
         }
         Acknowledge(0x00);
-        return thumbnail;
+        Thumbnail thm = new Thumbnail();
+        thm.GrayscaleData = new byte[4800];
+        Array.Copy(thumbnail, thm.GrayscaleData, 4800);
+        return thm;
     }
 
     public StatusData? Status() {
@@ -127,10 +132,17 @@ public class DC20Controller {
         var (correct, bytes) = ReadWithChecksum(256);
         Debug($"[{string.Join(", ", bytes.Select((x, i) => $"{i+1}:{x:X2}"))}]");
         var result = StatusData.From(bytes);
+        statusDataInternal = result;
         WriteAck(0xD2);
         Acknowledge(0x00);
 
         return correct ? result : null;
+    }
+
+    public struct Thumbnail {
+        public const int Width = 80;
+        public const int Height = 60;
+        public byte[] GrayscaleData;
     }
 
     public struct StatusData {
@@ -158,15 +170,15 @@ public class DC20Controller {
 }
 
 static class DC20Util {
-    public static string ThumbnailToPGM(byte[] data) {
+    public static string ThumbnailToPGM(DC20.Thumbnail thumbnail) {
         var sb = new StringBuilder();
         sb.AppendLine("P2");
         sb.AppendLine($"{80} {60}");
         sb.AppendLine("255");
         int i = 0;
-        for (int x = 0; x < 80; x++) {
-            for (int y = 0; y < 60; y++) {
-                sb.Append($"{data[i]} ");
+        for (int x = 0; x < DC20.Thumbnail.Width; x++) {
+            for (int y = 0; y < DC20.Thumbnail.Height; y++) {
+                sb.Append($"{thumbnail.GrayscaleData[i]} ");
                 i++;
             }
             sb.AppendLine();
