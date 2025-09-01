@@ -2,7 +2,87 @@
 using System.IO.Ports;
 using System.Text;
 
+Console.WriteLine("Serial port name? (ie COM6)");
+var port = Console.ReadLine().Trim();
+var dc20 = new DC20(port, DC20.BaudRate._115200, false);
+while (true)
+{
+    Console.WriteLine("(Q)uit | (S)tatus | (D)ownload | (R)esoluition | (C)lear memory\n");
+    var key = char.ToUpper(Console.ReadKey().KeyChar);
+    Console.WriteLine();
+    switch (key)
+    {
+        case 'Q':
+            throw new Exception("bye!");
+        case 'S':
+            var status_ = dc20.GetStatus();
+            if (status_ != null)
+            {
+                var status = status_.Value;
+                Console.WriteLine($"Model: {status.Model}\nRemaining pics: {status.PicturesRemaining}\nPics taken: {status.PicturesTaken}\nResolution: {status.Resolution}\n");
+            }
+            else
+            {
+                Console.WriteLine("Error! Not connected?");
+            }
+            break;
+        case 'D':
+            {
+                var tasks = new List<Task>();
+                var picCount = dc20.GetStatus().Value.PicturesTaken;
+                for (byte i = 1; i <= picCount; i++)
+                {
+                    var ccd = dc20.GetRawCCD(i);
+                    Console.WriteLine();
+                    var n = i;
+                    tasks.Add(Task.Run(() =>
+                    {
 
+                        File.WriteAllBytes($"{n}.tga", dc20pack.Dc2totga(ccd));
+                    }));
+                }
+                Task.WaitAll(tasks.ToArray());
+                break;
+            }
+        case 'R':
+            {
+                var picCount = dc20.GetStatus().Value.PicturesTaken;
+                if (picCount > 0)
+                {
+                    Console.WriteLine("Memory must be clear to change resolution.");
+                    break;
+                }
+                Console.WriteLine("(H)igh | (L)ow");
+                key = char.ToUpper(Console.ReadKey().KeyChar);
+                Console.WriteLine();
+                if (key == 'L')
+                {
+                    dc20.ChangeResolution(DC20.Resolution.Low);
+                    Console.WriteLine("set to low");
+                }
+                else if (key == 'H')
+                {
+                    dc20.ChangeResolution(DC20.Resolution.High);
+                    Console.WriteLine("set to high");
+                }
+                else
+                {
+                    Console.WriteLine("leaving as-is");
+                }
+                break;
+            }
+        case 'C':
+            Console.WriteLine("Are you sure? (Y|N)");
+            key = char.ToUpper(Console.ReadKey().KeyChar);
+            Console.WriteLine();
+            if (key == 'Y')
+            {
+                dc20.EraseMemory();
+            }
+            break;
+
+    }
+}
 
 public class DC20
 {
@@ -30,13 +110,14 @@ public class DC20
             Console.WriteLine($"LR:{LastResponse},LRC:{LastResponseCorrect},{text}");
     }
 
-    public DC20(string portName, bool debug_mode = false)
+    public DC20(string portName, BaudRate br, bool debug_mode = false)
     {
         serial_port = new SerialPort(portName, baudRate: 9600, Parity.Even, dataBits: 8, StopBits.One);
         debug = debug_mode;
         serial_port.Open();
         Debug($"Hello, serial! {serial_port.IsOpen}");
         hasReadStatus = false;
+        this.Init(br);
     }
     ~DC20()
     {
@@ -83,7 +164,7 @@ public class DC20
         return (bytes_read == byte_count && checksum_correct, status);
     }
 
-    public bool Init(BaudRate newBaudRate = BaudRate._9600)
+    private bool Init(BaudRate newBaudRate = BaudRate._9600)
     {
         (byte BaudA, byte BaudB) = newBaudRate switch
         {
@@ -126,6 +207,12 @@ public class DC20
 
         return correct ? result : null;
     }
+    public void EraseMemory()
+    {
+        Write(0x7A, 00, 00, 00, 00, 00, 00, 0x1A);
+        ReadAck();
+        ReadAck(0x00);
+    }
 
     /// <summary>
     /// Starts from 1
@@ -161,6 +248,7 @@ public class DC20
                 Write(0x71, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x1A);
                 return true;
         }
+        ReadAck();
         return false;
     }
 
@@ -178,10 +266,19 @@ public class DC20
         byte[] raw_data = new byte[1024 * byteCount];
         for (int i = 0; i < byteCount; i++)
         {
+            if (true)
+            {
+                Console.CursorTop--;
+            }
             var (correct, bytes) = ReadWithChecksum(1024);
             WriteAck(0xD2);
             bytes.CopyTo(raw_data, i * 1024);
+            if (true)
+            {
+                Console.WriteLine($"{i + 1}/{byteCount}");
+            }
         }
+        ReadAck(0x00);
         return raw_data;
     }
 
