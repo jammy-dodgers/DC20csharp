@@ -11,9 +11,9 @@
 static class dc20pack
 {
     /// <summary>
-    /// sorry about the naming of stuff around here i kinda just wanted to get it done
+    /// stuff that were static in the original c program
     /// </summary>
-    private struct Semiglobals
+    private struct C_statics
     {
         public byte[][] ccd;
         public long[][] horiz_ipol;
@@ -34,7 +34,7 @@ static class dc20pack
     const int HORIZ_IPOL = 3;
     const int SCALE = 64;
 
-    private static void read_dc2_file(Semiglobals _, Stream i_f)
+    private static void read_dc2_file(C_statics _, Stream i_f)
     {
 
         var fsize = i_f.Length;
@@ -113,7 +113,7 @@ static class dc20pack
         }
     }
 
-    private static void set_intial_interp(Semiglobals _)
+    private static void set_intial_interp(C_statics _)
     {
         int column, line;
         for (line = 0; line < LINES; line++)
@@ -127,7 +127,7 @@ static class dc20pack
         }
     }
 
-    private static void ipol_horizontally(Semiglobals _)
+    private static void ipol_horizontally(C_statics _)
     {
 
         int column, line, i, init_col;
@@ -149,7 +149,7 @@ static class dc20pack
         }
     }
 
-    static void ipol_vertically(Semiglobals _)
+    static void ipol_vertically(C_statics _)
     {
         int column, line;
         for (line = TOP_MARGIN; line < LINES - BOTTOM_MARGIN; line++)
@@ -246,7 +246,7 @@ static class dc20pack
     const double NORM_PERCENTAGE = 0.5;
     const double GAMMA = 0.5;
 
-    private static void adjust_color_and_saturation(Semiglobals _, double saturation = SATURATION, double rfactor = RFACTOR, double gfactor = GFACTOR, double bfactor = BFACTOR)
+    private static void adjust_color_and_saturation(C_statics _, double saturation = SATURATION, double rfactor = RFACTOR, double gfactor = GFACTOR, double bfactor = BFACTOR)
     {
         int line, column;
         double sqr_saturation = Math.Sqrt(saturation);
@@ -334,7 +334,7 @@ static class dc20pack
     const int NET_LINES = (LINES - TOP_MARGIN - BOTTOM_MARGIN);
     const int NET_PIXELS = (NET_COLUMNS * NET_LINES);
     const int SMAX = (256 * SCALE - 1);
-    private static (long, long) determine_limits(Semiglobals _, double norm_percentage = NORM_PERCENTAGE)
+    private static (long, long) determine_limits(C_statics _, double norm_percentage = NORM_PERCENTAGE)
     {
         var histogram = new uint[HISTOGRAM_STEPS + 1];
         int column, line;
@@ -424,7 +424,7 @@ static class dc20pack
     }
 
 
-    private static void stretch(Semiglobals _, long low_i, long high_i)
+    private static void stretch(C_statics _, long low_i, long high_i)
     {
         int column, line, i;
         byte max_ccd_val = 255;
@@ -531,7 +531,7 @@ static class dc20pack
         } /* Ende Zeile  Zielbild */
 
     }
-    private static void sharpen(Semiglobals _)
+    private static void sharpen(C_statics _)
     {
         long r, g, b, f11 = 0;
         long[][] f = new[] {
@@ -621,7 +621,7 @@ static class dc20pack
             }
         }
     }
-    private static byte[] output_tga(Semiglobals _)
+    private static byte[] output_tga(C_statics _)
     {
         int column, line;
 
@@ -655,7 +655,7 @@ static class dc20pack
     public static byte[] Dc2totga(byte[] raw)
     {
         //not handling those stupid thumbnail things
-        Semiglobals semiglobals = new();
+        C_statics semiglobals = new();
         using var i_f = new MemoryStream(raw);
         semiglobals.ccd = new byte[RES_LINES][];
         semiglobals.horiz_ipol = new long[RES_LINES][];
