@@ -7,7 +7,7 @@ var port = Console.ReadLine().Trim();
 var dc20 = new DC20(port, DC20.BaudRate._115200, false);
 while (true)
 {
-    Console.WriteLine("(Q)uit | (S)tatus | (D)ownload | (R)esoluition | (C)lear memory\n");
+    Console.WriteLine("(Q)uit | (S)tatus | (D)ownload | (R)esolution | (C)lear memory\n");
     var key = char.ToUpper(Console.ReadKey().KeyChar);
     Console.WriteLine();
     switch (key)
@@ -243,12 +243,15 @@ public class DC20
         {
             case Resolution.High:
                 Write(0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1A);
+                ReadAck(0x0);
+                ReadAck();
                 return true;
             case Resolution.Low:
                 Write(0x71, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x1A);
+                ReadAck(0x0);
+                ReadAck();
                 return true;
         }
-        ReadAck();
         return false;
     }
 
@@ -281,125 +284,6 @@ public class DC20
         ReadAck(0x00);
         return raw_data;
     }
-
-    // /// <summary>
-    // /// Starts from 1.
-    // /// </summary>
-    // /// <param name="index">Starts from 1</param>
-    // /// <returns></returns>
-    // public Image GetImage(byte index)
-    // {
-    //     Debug($"Attempt to read image {index}");
-    //     var img = new Image();
-    //     if (!hasReadStatus)
-    //     {
-    //         GetStatus();
-    //         //todo: sanity check index vs picture count
-    //     }
-    //     Write(0x51, 0x00, 0x00, (byte)index, 0x00, 0x00, 0x00, 0x1A);
-    //     ReadAck();
-
-    //     // the camera sends 122 data blocks (if in high-res mode) or 61 data blocks (if in low-res mode)
-    //     var byteCount = StatusInternal.Resolution == Resolution.High ? 122 : 61;
-    //     byte[] raw_data = new byte[1024 * byteCount];
-    //     for (int i = 0; i < byteCount; i++)
-    //     {
-    //         var (correct, bytes) = ReadWithChecksum(1024);
-    //         WriteAck(0xD2);
-    //         bytes.CopyTo(raw_data, i * 1024);
-    //     }
-    //     ReadAck(0x00);
-    //     var rowWidth = StatusInternal.Resolution == Resolution.High ? 512 : 256;
-    //     var columnHeight = 243;
-    //     var header = new byte[rowWidth]; //For some reason the header goes into a row
-    //     Array.Copy(raw_data, 0, header, 0, rowWidth);
-    //     img.RawHeader = header;
-    //     img.Resolution = StatusInternal.Resolution;
-    //     img.RawData = Helper.New2D<byte>(columnHeight + 1, rowWidth);
-    //     img.RawPixelData = Helper.New2D<byte>(columnHeight, rowWidth);
-    //     Array.Copy(header, 0, img.RawData[0], 0, rowWidth);
-    //     for (int i = 0; i < columnHeight; i++)
-    //     {
-    //         Array.Copy(raw_data, rowWidth * (i + 1), img.RawData[i + 1], 0, rowWidth);
-    //         Array.Copy(raw_data, rowWidth * (i + 1), img.RawPixelData[i], 0, rowWidth);
-    //     }
-    //     img.MyHeader = Image.Header.From(header);
-    //     return img;
-    // }
-
-
-    // public struct Image {
-    //     /// <summary>
-    //     /// hires margins
-    //     /// LM: 1, RM: 10, TM: 0, BM: 1
-    //     /// lowres margins
-    //     /// LM: 1, RM: 5, TM: 0, BM: 1
-    //     /// first row is header
-    //     /// </summary>
-    //     public byte[][] RawData;
-    //     public byte[][] RawPixelData;
-
-    //     /// <summary>
-    //     /// Wrong place for this i know
-    //     /// </summary>
-    //     public Resolution Resolution;
-    //     private Resolution res;
-    //     public byte[] RawHeader;
-    //     public Header MyHeader;
-
-    //     /// <summary>
-    //     /// Currently assumes hi-res
-    //     /// </summary>
-    //     /// <returns></returns>
-    //     public byte[] ToGreyscale() {
-    //         var greyscale_output = new byte[256*243];
-    //         for (int row = 0; row < 243; row++) {
-    //             for (int col = 0; col < 512; col += 2) {
-    //                 greyscale_output[256 * row + (col / 2)] = (byte)((RawPixelData[row][col] + RawPixelData[row][col+1])/2);
-    //             }
-    //         }
-    //         return greyscale_output;
-    //     }
-
-    //     public byte[] ToRawData() {
-    //         return RawData.SelectMany(x => x).ToArray();
-    //     }
-    //     public static Image FromRawData(byte[] data) {
-    //         var img = new Image();
-    //         img.MyHeader = Header.From(data);
-    //         var rowWidth = img.MyHeader.Resolution == Resolution.High ? 512 : 256;
-    //         img.RawData = data.Chunk(rowWidth).ToArray();
-    //         img.RawHeader = img.RawData[0];
-    //         img.RawPixelData = img.RawData.Skip(1).ToArray();
-    //         return img;
-    //     }
-
-    //     public struct Header {
-    //         public CameraModel Model;
-    //         public UInt16 PictureNumber;
-    //         public Resolution Resolution;
-    //         public UInt32 FileSize;
-
-    //         public sbyte EXP1;
-    //         public sbyte EXP2;
-    //         public sbyte EXP3;
-    //         public sbyte EXP4;
-
-    //         public static Header From(byte[] bytes) {
-    //             var header = new Header();
-    //             header.Model = (CameraModel)bytes[1];
-    //             header.PictureNumber = BitConverter.ToUInt16(bytes, 2);
-    //             header.Resolution = (Resolution)bytes[4];
-    //             header.FileSize = BitConverter.ToUInt32(bytes, 6);
-
-    //             header.EXP1 = unchecked((sbyte)bytes[16]);
-    //             header.EXP2 = unchecked((sbyte)bytes[17]);
-    //             header.EXP3 = unchecked((sbyte)bytes[34]);
-    //             header.EXP4 = unchecked((sbyte)bytes[35]);
-    //             return header;
-    //         }
-    //     }
-    // } 
 
     public struct Thumbnail
     {
@@ -486,12 +370,7 @@ internal static class Helper
         }
         return output;
     }
-    /// <summary>
-    /// A seal gets fed cement every time I have to rewrite a new Deepcopy function
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="thing"></param>
-    /// <returns></returns>
+
     internal static T[][] Deepcopy<T>(this T[][] thing)
     {
         var thingDimSize = thing.Length;
